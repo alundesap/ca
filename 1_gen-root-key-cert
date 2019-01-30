@@ -1,0 +1,94 @@
+#!/bin/bash
+read -p "Enter Company name: " coname
+read -p "Enter Company email: " coemail
+echo ""
+echo "Generating Root key and cert!"
+echo ""
+echo "When prompted for the following, enter 4-1023 character phrase and remember it."
+echo "Enter pass phrase for private/ca.key.pem:"
+echo ""
+echo "When asked this, enter the same." 
+echo "Verifying - Enter pass phrase for private/ca.key.pem:"
+echo ""
+echo "When asked this, enter it again."
+echo "Enter pass phrase for private/ca.key.pem:"
+echo ""
+echo "Fill in other prompts as required or accept defaults."
+echo ""
+
+echo -n "Continue(y/n)? "
+read continue_yn
+
+if echo "$continue_yn" | grep -iq "^y" ;then
+
+echo "Continuing..."
+
+echo "Directory setup."
+cmd="mkdir -p certs crl newcerts private"
+echo $cmd
+eval $cmd
+
+cmd="chmod 700 private"
+echo $cmd
+eval $cmd
+
+cmd="touch index.txt"
+echo $cmd
+eval $cmd
+
+echo "Adjusting Defaults."
+cmd="cp openssl.cnf openssl-alt.cnf"
+echo $cmd
+eval $cmd
+
+cmd="sed -i -e \"s/XSA, Inc./$coname, Inc./g\" openssl-alt.cnf"
+echo $cmd
+eval $cmd
+
+cmd="sed -i -e \"s/XSA Root CA/$coname Root CA/g\" openssl-alt.cnf"
+echo $cmd
+eval $cmd
+
+cmd="sed -i -e \"s/xsa@inc.com/$coemail/g\" openssl-alt.cnf"
+echo $cmd
+eval $cmd
+
+echo "Generating Key."
+cmd="openssl genrsa -aes256 -out private/ca.key.pem 4096"
+echo $cmd
+eval $cmd
+
+echo "chmod Key."
+cmd="chmod 400 private/ca.key.pem"
+echo $cmd
+eval $cmd
+
+echo "Generating Cert."
+cmd="openssl req -config openssl-alt.cnf -key private/ca.key.pem -new -x509 -days 7300 -sha256 -extensions v3_ca -out certs/ca.cert.pem"
+echo $cmd
+eval $cmd
+
+echo "chmod Cert."
+cmd="chmod 444 certs/ca.cert.pem"
+echo $cmd
+eval $cmd
+
+
+echo "Verify the Root Cert."
+cmd="openssl x509 -noout -text -in certs/ca.cert.pem"
+echo $cmd
+eval $cmd
+
+echo ""
+echo "Finished..."
+echo ""
+echo "You did remember to store your pass phrase in a safe place right?"
+echo ""
+echo "Now run 2_gen-intermediate-key-cert to generate the intermediate cert."
+echo ""
+echo "./2_gen-intermediate-key-cert"
+echo ""
+
+else
+    echo "Aborting..."
+fi

@@ -1,0 +1,174 @@
+#!/bin/bash
+read -p "Enter fully qualified host name: " fqdn
+echo ""
+echo "Generating SSL cert for $fqdn with the XSA CA and Intermediate cert chain!"
+echo "Web Browsers will need to install and trust the XSA CA and Intermediate certs in order for this generated SSL cert to be trusted without having to have a browser security exception."
+echo "Installation instructions will follow."
+echo ""
+
+echo -n "Do you want to generate a wildcard certificate(y/n)? "
+read wildcard_yn
+
+echo ""
+
+if echo "$wildcard_yn" | grep -iq "^y" ;then
+    echo "Generating wildcard version..."
+
+    cat openssl.1 > openssl-altw.cnf
+    echo "Adding Alternate Names..."
+    cmd="subjectAltName=DNS:www.$fqdn,DNS:$fqdn,DNS:*.$fqdn,DNS:*.*.$fqdn"
+    echo $cmd
+    echo $cmd >> openssl-altw.cnf
+    cat openssl.2 >> openssl-altw.cnf
+    echo ""
+    echo "When prompted for Common Name []: use this *.$fqdn"
+else
+    echo "Not generating wildcard version..."
+    echo "When prompted for Common Name []: use this $fqdn"
+fi
+
+echo ""
+echo "Use defaults for all other prompts."
+echo ""
+
+echo "Enter pass phrase for /root/ca/intermediate/private/intermediate.key.pem: [from step #2]"
+echo ""
+
+echo -n "Continue(y/n)? "
+read continue_yn
+
+if echo "$continue_yn" | grep -iq "^y" ;then
+
+echo "Continuing..."
+
+echo "Generating Key."
+#cmd="openssl genrsa -aes256 -out private/$fqdn.key.pem 2048"
+cmd="openssl genrsa -out private/$fqdn.key.pem 2048"
+echo $cmd
+eval $cmd
+
+echo "chmod Key."
+cmd="chmod 400 private/$fqdn.key.pem"
+echo $cmd
+eval $cmd
+
+if echo "$wildcard_yn" | grep -iq "^y" ;then
+  echo "Generating *PEM."
+  cmd="openssl req -config openssl-altw.cnf -key private/$fqdn.key.pem -new -sha256 -out csr/$fqdn.csr.pem -extensions v3_req"
+else
+  echo "Generating PEM."
+  cmd="openssl req -config openssl-alt.cnf -key private/$fqdn.key.pem -new -sha256 -out csr/$fqdn.csr.pem"
+fi
+echo $cmd
+echo ""
+eval $cmd
+
+if echo "$wildcard_yn" | grep -iq "^y" ;then
+  echo "Generating *Cert."
+  cmd="openssl ca -config openssl-altw.cnf -extensions server_cert -days 375 -notext -md sha256 -in csr/$fqdn.csr.pem -out certs/$fqdn.cert.pem -extensions v3_req"
+else
+  echo "Generating Cert."
+  cmd="openssl ca -config openssl-alt.cnf -extensions server_cert -days 375 -notext -md sha256 -in csr/$fqdn.csr.pem -out certs/$fqdn.cert.pem" 
+fi
+echo $cmd
+eval $cmd
+
+echo "chmod Cert."
+cmd="chmod 444 certs/$fqdn.cert.pem"
+echo $cmd
+eval $cmd
+
+echo "Verify Cert."
+cat index.txt
+
+echo "Convert Cert to x509"
+if echo "$wildcard_yn" | grep -iq "^y" ;then
+  cmd="openssl x509 -noout -text -in certs/$fqdn.cert.pem -extensions v3_req"
+else
+  cmd="openssl x509 -noout -text -in certs/$fqdn.cert.pem"
+fi
+echo $cmd
+eval $cmd
+
+echo "Verify Against CA."
+cmd="openssl verify -CAfile certs/ca-chain.cert.pem certs/$fqdn.cert.pem"
+echo $cmd
+eval $cmd
+
+echo "Examine the Cert."
+cmd="openssl x509 -in certs/$fqdn.cert.pem -text -noout"
+echo $cmd
+eval $cmd
+
+
+echo ""
+echo "Now prepare the cert for use with XS-A"
+echo ""
+
+
+echo "Convert Cert to pkcs8"
+cmd="openssl pkcs8 -topk8 -in private/$fqdn.key.pem -out private/$fqdn.key -outform pem -nocrypt"
+echo $cmd
+eval $cmd
+echo ""
+
+echo "Combine CA+Int+Cert."
+cmd="cat certs/$fqdn.cert.pem certs/ca-chain.cert.pem > certs/$fqdn.pem"
+echo $cmd
+eval $cmd
+echo ""
+ 
+echo "Copy CA Chain to webroot."
+cmd="cp certs/ca-chain.cert.pem /srv/www/htdocs/"
+echo $cmd
+eval $cmd
+echo ""
+
+echo "Create symlinks for latest."
+cmd="cp certs/$fqdn.cert.pem certs/cert.pem"
+echo $cmd
+eval $cmd
+
+cmd="cp certs/$fqdn.pem certs/pem"
+echo $cmd
+eval $cmd
+
+cmd="cp private/$fqdn.key.pem private/key.pem"
+echo $cmd
+eval $cmd
+
+cmd="cp private/$fqdn.key private/key"
+echo $cmd
+eval $cmd
+
+echo ""
+
+
+
+echo "Generation of SSL cert for $fqdn is complete.  Do this."
+echo ""
+
+echo "Execute these XS commands as the root user."
+echo ""
+echo "cd /root/ca/intermediate/"
+echo ""
+echo "/hana/shared/HXE/xs/bin/xs api https://$fqdn:30030 --skip-ssl-validation"
+echo "--or--"
+echo "/hana/shared/HXE/xs/bin/xs api https://api.$fqdn:30033 --skip-ssl-validation"
+echo ""
+echo "/hana/shared/HXE/xs/bin/xs login -u XSA_ADMIN -s SAP"
+echo ""
+echo "/hana/shared/HXE/xs/bin/xs set-certificate $fqdn -k private/$fqdn.key -c certs/$fqdn.pem"
+echo ""
+echo "Apache2 SSL config."
+echo ""
+echo "vi /etc/apache2/vhosts.d/vhost-ssl.conf"
+echo ""
+echo        "SSLCertificateFile /root/ca/intermediate/certs/cert.pem"
+echo        "SSLCertificateKeyFile /root/ca/intermediate/private/key"
+echo        "SSLCertificateChainFile /root/ca/intermediate/certs/ca-chain.cert.pem"
+echo ""
+
+else
+    echo "Aborting..."
+fi

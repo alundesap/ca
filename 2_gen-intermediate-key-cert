@@ -1,0 +1,129 @@
+#!/bin/bash
+read -p "Enter Company name: " coname
+read -p "Enter Company email: " coemail
+echo ""
+echo "Generating Intermediate key and cert!"
+echo ""
+echo "When prompted for the following, enter 4-1023 character phrase and remember it."
+echo "Enter pass phrase for intermediate/private/intermediate.key.pem:"
+echo ""
+echo "When asked this, enter the same." 
+echo "Verifying - Enter pass phrase for intermediate/private/intermediate.key.pem:"
+echo ""
+echo "When asked this, enter it again."
+echo "Enter pass phrase for intermediate/private/intermediate.key.pem:"
+echo ""
+echo "Fill in other prompts as required or accept defaults."
+echo ""
+echo "When asked this, enter your ROOT CA PASSPHRASE from step #1!"
+echo ""
+
+echo -n "Continue(y/n)? "
+read continue_yn
+
+if echo "$continue_yn" | grep -iq "^y" ;then
+
+echo "Continuing..."
+
+echo "Directory setup."
+cmd="mkdir -p intermediate/certs intermediate/crl intermediate/csr intermediate/newcerts intermediate/private"
+echo $cmd
+eval $cmd
+
+cmd="chmod 700 intermediate/private"
+echo $cmd
+eval $cmd
+
+cmd="touch intermediate/index.txt"
+echo $cmd
+eval $cmd
+
+echo "Adjusting Defaults."
+cmd="cp intermediate/openssl.cnf intermediate/openssl-alt.cnf"
+echo $cmd
+eval $cmd
+
+cmd="sed -i -e \"s/XSA, Inc./$coname, Inc./g\" intermediate/openssl-alt.cnf"
+echo $cmd
+eval $cmd
+
+cmd="sed -i -e \"s/XSA, Inc./$coname, Inc./g\" intermediate/openssl.1"
+echo $cmd
+eval $cmd
+
+cmd="sed -i -e \"s/XSA Intermediate CA/$coname Intermediate CA/g\" intermediate/openssl-alt.cnf"
+echo $cmd
+eval $cmd
+
+cmd="sed -i -e \"s/XSA Intermediate CA/$coname Intermediate CA/g\" intermediate/openssl.1"
+echo $cmd
+eval $cmd
+
+cmd="sed -i -e \"s/xsa@inc.com/$coemail/g\" intermediate/openssl-alt.cnf"
+echo $cmd
+eval $cmd
+
+cmd="sed -i -e \"s/xsa@inc.com/$coemail/g\" intermediate/openssl.1"
+echo $cmd
+eval $cmd
+
+
+echo "Generating Key."
+cmd="openssl genrsa -aes256 -out intermediate/private/intermediate.key.pem 4096"
+echo $cmd
+eval $cmd
+
+echo "chmod Key."
+cmd="chmod 400 intermediate/private/intermediate.key.pem"
+echo $cmd
+eval $cmd
+
+
+echo "Generating Intermediate CSR"
+cmd="openssl req -config intermediate/openssl-alt.cnf -new -sha256 -key intermediate/private/intermediate.key.pem -out intermediate/csr/intermediate.csr.pem"
+echo $cmd
+eval $cmd
+
+
+echo "Generating Intermediate Cert."
+cmd="openssl ca -config openssl-alt.cnf -extensions v3_intermediate_ca -days 3650 -notext -md sha256 -in intermediate/csr/intermediate.csr.pem -out intermediate/certs/intermediate.cert.pem"
+echo $cmd
+eval $cmd
+
+echo "chmod Cert."
+cmd="chmod 444 intermediate/certs/intermediate.cert.pem"
+echo $cmd
+eval $cmd
+
+echo "Verify the Intermediate Cert."
+cmd="openssl x509 -noout -text -in intermediate/certs/intermediate.cert.pem"
+echo $cmd
+eval $cmd
+
+echo "Verify the Intermediate Cert against the Root Cert."
+cmd="openssl verify -CAfile certs/ca.cert.pem intermediate/certs/intermediate.cert.pem"
+echo $cmd
+eval $cmd
+
+echo "Create CA-Cert Chain."
+cmd="cat intermediate/certs/intermediate.cert.pem certs/ca.cert.pem > intermediate/certs/ca-chain.cert.pem"
+echo $cmd
+eval $cmd
+
+echo "chmod CA-Cert Chain."
+cmd="chmod 444 intermediate/certs/ca-chain.cert.pem"
+echo $cmd
+eval $cmd
+echo ""
+echo "Finished..."
+echo ""
+echo "You did remember to store your intermediate pass phrase in a safe place right?"
+echo ""
+echo "Now change into the intermediate directory and run gen-xsa-ca-ssl-cert"
+echo ""
+echo "cd intermediate ; ./gen-xsa-ca-ssl-cert"
+echo ""
+
+else
+    echo "Aborting..."
+fi
